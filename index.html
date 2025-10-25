@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <title>SolarX — Real NASA Edition</title>
+  <meta name="theme-color" content="#0b1022" />
+  <link rel="manifest" id="dynManifest" />
+  <style>
+    :root{--bg:#0b1022;--ink:#eaf1ff;--muted:#9bb0d9;--card:#101739;--line:#1c2550;--cta:#22c55e;--warn:#f59e0b}
+    *{box-sizing:border-box}html,body{height:100%}
+    body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial;background:radial-gradient(1200px 600px at 50% -10%,#172042,var(--bg));color:var(--ink);overflow:hidden}
+    #ui{position:fixed;inset:12px auto auto 12px;z-index:10;display:grid;gap:8px;max-width:min(420px,95vw)}
+    .panel{background:#0d1430cc;border:1px solid var(--line);backdrop-filter:blur(6px);padding:10px 12px;border-radius:14px;box-shadow:0 10px 30px #0006}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    label{font-size:13px;color:var(--muted)}
+    input[type="range"]{width:140px}
+    button{appearance:none;border:1px solid var(--line);background:#121a3dcc;color:var(--ink);padding:8px 10px;border-radius:12px;cursor:pointer}
+    button.primary{border-color:transparent;background:linear-gradient(180deg,#2eddbf,#17a38f);color:#041a19;font-weight:600}
+    button.warn{background:#281c05;border-color:#5a3b0a;color:#ffc777}
+    .small{font-size:12px;color:var(--muted)}
+    #hud{position:fixed;right:12px;top:12px;z-index:10}
+    #hud .panel{min-width:220px}
+    #credit{position:fixed;left:0;right:0;bottom:6px;text-align:center;font-size:12px;color:#9bb0d9}
+    a{color:#9ddcff;text-decoration:none}
+    canvas{display:block}
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div class="panel">
+      <div class="row" style="justify-content:space-between"><strong>SolarX — Sistema Solare 3D</strong><span class="small" id="fps">FPS: —</span></div>
+      <div class="row">
+        <button id="play" class="primary">▶︎ Play</button>
+        <button id="pause">⏸︎ Pausa</button>
+        <label>Velocità</label>
+        <select id="speed">
+          <option value="1">1×</option>
+          <option value="60">60×</option>
+          <option value="3600">3.6k×</option>
+          <option value="86400" selected>86k×</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Scala distanze</label>
+        <input type="range" id="distanceScale" min="0.02" max="1" step="0.01" value="0.2" />
+        <label>Scala diametri</label>
+        <input type="range" id="sizeScale" min="0.2" max="4" step="0.1" value="1.2" />
+      </div>
+    </div>
+  </div>
+
+  <div id="credit">Texture NASA/USGS — Blue Marble, LRO, Viking, Cassini © NASA</div>
+
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+  <script>
+  const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);document.body.appendChild(renderer.domElement);
+  const scene=new THREE.Scene();scene.background=new THREE.Color(0x000000);
+  const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.001,1e6);camera.position.z=15;
+  const controls=new THREE.OrbitControls(camera,renderer.domElement);
+  const light=new THREE.PointLight(0xffffff,2);scene.add(light);
+
+  const texLoader=new THREE.TextureLoader();
+  const textures={
+    Terra:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/earthmap1k.jpg'),
+    Luna:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/moonmap1k.jpg'),
+    Marte:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/marsmap1k.jpg'),
+    Giove:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/jupitermap1k.jpg'),
+    Saturno:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/saturnmap.jpg'),
+    Rings:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/saturnringcolor.jpg')
+  };
+
+  function makePlanet(tex,radius,dist){
+    const geo=new THREE.SphereGeometry(radius,64,64);
+    const mat=new THREE.MeshStandardMaterial({map:tex});
+    const mesh=new THREE.Mesh(geo,mat);mesh.position.x=dist;return mesh;
+  }
+
+  const sun=new THREE.Mesh(new THREE.SphereGeometry(1.5,64,64),new THREE.MeshBasicMaterial({color:0xffcc33}));scene.add(sun);
+  const terra=makePlanet(textures.Terra,0.5,4);scene.add(terra);
+  const luna=makePlanet(textures.Luna,0.14,4.6);scene.add(luna);
+  const marte=makePlanet(textures.Marte,0.3,6.5);scene.add(marte);
+  const giove=makePlanet(textures.Giove,1.2,9);scene.add(giove);
+  const saturno=makePlanet(textures.Saturno,1,13);scene.add(saturno);
+
+  const ringGeo=new THREE.RingGeometry(1.2,2.1,128);
+  const ringMat=new THREE.MeshBasicMaterial({map:textures.Rings,side:THREE.DoubleSide,transparent:true});
+  const rings=new THREE.Mesh(ringGeo,ringMat);rings.rotation.x=Math.PI/2;saturno.add(rings);
+
+  window.addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();});
+  function animate(){requestAnimationFrame(animate);terra.rotation.y+=0.01;luna.rotation.y+=0.008;marte.rotation.y+=0.009;giove.rotation.y+=0.007;saturno.rotation.y+=0.006;controls.update();renderer.render(scene,camera);}animate();
+  </script>
+</body>
+</html>
