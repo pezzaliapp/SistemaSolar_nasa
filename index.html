@@ -3,35 +3,33 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-  <title>SolarX — Real NASA Edition</title>
+  <title>SolarX — Orbital NASA Edition (single-file)</title>
   <meta name="theme-color" content="#0b1022" />
-  <link rel="manifest" id="dynManifest" />
   <style>
-    :root{--bg:#0b1022;--ink:#eaf1ff;--muted:#9bb0d9;--card:#101739;--line:#1c2550;--cta:#22c55e;--warn:#f59e0b}
-    *{box-sizing:border-box}html,body{height:100%}
+    :root{ --bg:#0b1022; --ink:#eaf1ff; --muted:#9bb0d9; --card:#101739; --line:#1c2550; --cta:#22c55e }
+    *{box-sizing:border-box} html,body{height:100%}
     body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial;background:radial-gradient(1200px 600px at 50% -10%,#172042,var(--bg));color:var(--ink);overflow:hidden}
-    #ui{position:fixed;inset:12px auto auto 12px;z-index:10;display:grid;gap:8px;max-width:min(420px,95vw)}
+    #ui{position:fixed;left:12px;top:12px;z-index:10;display:grid;gap:8px;max-width:min(420px,95vw)}
     .panel{background:#0d1430cc;border:1px solid var(--line);backdrop-filter:blur(6px);padding:10px 12px;border-radius:14px;box-shadow:0 10px 30px #0006}
     .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    label{font-size:13px;color:var(--muted)}
-    input[type="range"]{width:140px}
+    label{font-size:13px;color:var(--muted)} .small{font-size:12px;color:var(--muted)}
     button{appearance:none;border:1px solid var(--line);background:#121a3dcc;color:var(--ink);padding:8px 10px;border-radius:12px;cursor:pointer}
     button.primary{border-color:transparent;background:linear-gradient(180deg,#2eddbf,#17a38f);color:#041a19;font-weight:600}
-    button.warn{background:#281c05;border-color:#5a3b0a;color:#ffc777}
-    .small{font-size:12px;color:var(--muted)}
-    #hud{position:fixed;right:12px;top:12px;z-index:10}
-    #hud .panel{min-width:220px}
+    input[type="range"]{width:140px}
     #credit{position:fixed;left:0;right:0;bottom:6px;text-align:center;font-size:12px;color:#9bb0d9}
-    a{color:#9ddcff;text-decoration:none}
+    a{color:#aee1ff;text-decoration:none}
     canvas{display:block}
   </style>
 </head>
 <body>
   <div id="ui">
     <div class="panel">
-      <div class="row" style="justify-content:space-between"><strong>SolarX — Sistema Solare 3D</strong><span class="small" id="fps">FPS: —</span></div>
+      <div class="row" style="justify-content:space-between">
+        <strong>SolarX — Sistema Solare 3D</strong>
+        <span class="small" id="fps">FPS: —</span>
+      </div>
       <div class="row">
-        <button id="play" class="primary">▶︎ Play</button>
+        <button id="play"  class="primary">▶︎ Play</button>
         <button id="pause">⏸︎ Pausa</button>
         <label>Velocità</label>
         <select id="speed">
@@ -39,57 +37,285 @@
           <option value="60">60×</option>
           <option value="3600">3.6k×</option>
           <option value="86400" selected>86k×</option>
+          <option value="604800">604k×</option>
+          <option value="2592000">2.59M×</option>
         </select>
       </div>
       <div class="row">
         <label>Scala distanze</label>
-        <input type="range" id="distanceScale" min="0.02" max="1" step="0.01" value="0.2" />
+        <input type="range" id="distanceScale" min="0.02" max="1" step="0.01" value="0.20" />
         <label>Scala diametri</label>
         <input type="range" id="sizeScale" min="0.2" max="4" step="0.1" value="1.2" />
       </div>
+      <div class="small">Suggerimento: riduci “Scala distanze” per avere il sistema compatto e ben visibile.</div>
     </div>
   </div>
 
-  <div id="credit">Texture NASA/USGS — Blue Marble, LRO, Viking, Cassini © NASA</div>
+  <div id="credit">
+    Texture derivate NASA/USGS (via Three.js examples) — Cassini per gli anelli. © rispettivi autori
+  </div>
 
+  <!-- Three.js + OrbitControls -->
   <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
   <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
+
   <script>
-  const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);document.body.appendChild(renderer.domElement);
-  const scene=new THREE.Scene();scene.background=new THREE.Color(0x000000);
-  const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.001,1e6);camera.position.z=15;
-  const controls=new THREE.OrbitControls(camera,renderer.domElement);
-  const light=new THREE.PointLight(0xffffff,2);scene.add(light);
+    // ---- Costanti ----
+    const DAY = 86400, TAU = Math.PI * 2;
+    let playing = true;
+    let simTime = Date.now()/1000;
+    let last = performance.now();
 
-  const texLoader=new THREE.TextureLoader();
-  const textures={
-    Terra:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/earthmap1k.jpg'),
-    Luna:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/moonmap1k.jpg'),
-    Marte:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/marsmap1k.jpg'),
-    Giove:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/jupitermap1k.jpg'),
-    Saturno:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/saturnmap.jpg'),
-    Rings:texLoader.load('https://planet-texture-maps.s3.amazonaws.com/saturnringcolor.jpg')
-  };
+    // ---- Renderer/Scene/Camera ----
+    const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
 
-  function makePlanet(tex,radius,dist){
-    const geo=new THREE.SphereGeometry(radius,64,64);
-    const mat=new THREE.MeshStandardMaterial({map:tex});
-    const mesh=new THREE.Mesh(geo,mat);mesh.position.x=dist;return mesh;
-  }
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x040914);
 
-  const sun=new THREE.Mesh(new THREE.SphereGeometry(1.5,64,64),new THREE.MeshBasicMaterial({color:0xffcc33}));scene.add(sun);
-  const terra=makePlanet(textures.Terra,0.5,4);scene.add(terra);
-  const luna=makePlanet(textures.Luna,0.14,4.6);scene.add(luna);
-  const marte=makePlanet(textures.Marte,0.3,6.5);scene.add(marte);
-  const giove=makePlanet(textures.Giove,1.2,9);scene.add(giove);
-  const saturno=makePlanet(textures.Saturno,1,13);scene.add(saturno);
+    const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.001, 2e6);
+    camera.position.set(0, 2.2, 18);
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
 
-  const ringGeo=new THREE.RingGeometry(1.2,2.1,128);
-  const ringMat=new THREE.MeshBasicMaterial({map:textures.Rings,side:THREE.DoubleSide,transparent:true});
-  const rings=new THREE.Mesh(ringGeo,ringMat);rings.rotation.x=Math.PI/2;saturno.add(rings);
+    // ---- Luci ----
+    const sunLight = new THREE.PointLight(0xffffff, 2.2, 0, 2);
+    scene.add(sunLight);
 
-  window.addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();});
-  function animate(){requestAnimationFrame(animate);terra.rotation.y+=0.01;luna.rotation.y+=0.008;marte.rotation.y+=0.009;giove.rotation.y+=0.007;saturno.rotation.y+=0.006;controls.update();renderer.render(scene,camera);}animate();
+    // ---- Stellato ----
+    (function starField(n=2500){
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(n*3);
+      for(let i=0;i<n;i++){
+        const r = 700 + Math.random()*800;
+        const t = Math.random()*TAU, p = Math.acos(2*Math.random()-1);
+        pos[i*3]   = r*Math.sin(p)*Math.cos(t);
+        pos[i*3+1] = r*Math.sin(p)*Math.sin(t);
+        pos[i*3+2] = r*Math.cos(p);
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+      const mat = new THREE.PointsMaterial({size:0.9, sizeAttenuation:true});
+      scene.add(new THREE.Points(geo, mat));
+    })();
+
+    // ---- UI refs ----
+    const $ = (id)=>document.getElementById(id);
+    const ui = {
+      play: $('play'), pause: $('pause'), speed: $('speed'),
+      distanceScale: $('distanceScale'), sizeScale: $('sizeScale'),
+      fps: $('fps')
+    };
+
+    // ---- Dati corpi principali ----
+    const bodies = [
+      { name:'Sole',   type:'star', radiusKm:696340, color:0xffc94a },
+
+      { name:'Terra',  radiusKm:6371, a_AU:1.000,  P_orbit:365.256, P_rot:23.934, tilt:23.44, inc:0.00,
+        tex:'https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg',
+        spec:'https://threejs.org/examples/textures/planets/earth_specular_2048.jpg' },
+
+      { name:'Luna',   parent:'Terra', radiusKm:1737, a_AU:0.00257, P_orbit:27.321, P_rot:655.7, tilt:6.68, inc:5.14,
+        tex:'https://threejs.org/examples/textures/planets/moon_1024.jpg' },
+
+      { name:'Marte',  radiusKm:3389, a_AU:1.524,  P_orbit:686.980, P_rot:24.623, tilt:25.19, inc:1.85,
+        tex:'https://threejs.org/examples/textures/planets/mars_1k_color.jpg' },
+
+      { name:'Giove',  radiusKm:69911,a_AU:5.203,  P_orbit:4332.6,  P_rot:9.925,  tilt:3.13,  inc:1.30,
+        tex:'https://threejs.org/examples/textures/planets/jupiter2_1024.jpg' },
+
+      { name:'Saturno',radiusKm:58232,a_AU:9.537,  P_orbit:10759.2, P_rot:10.7,  tilt:26.73, inc:2.49,
+        tex:'https://threejs.org/examples/textures/planets/saturn_1024.jpg',
+        ringTex:'https://threejs.org/examples/textures/planets/saturnringcolor.jpg',
+        ringAlpha:'https://threejs.org/examples/textures/planets/saturnringpattern.gif'
+      }
+    ];
+
+    // ---- Scale (visuali) ----
+    const km2unitBase = 1/7000; // raggio->unità scena
+    let sizeScale = parseFloat(ui.sizeScale.value);
+    let distanceScale = parseFloat(ui.distanceScale.value);
+
+    // ---- Mappe oggetti ----
+    const nodeByName = new Map();  // group tilt con mesh
+    const orbitByName = new Map(); // {radius, ringMesh}
+    const parentByName = new Map();
+
+    // ---- Sole ----
+    const sun = new THREE.Mesh(
+      new THREE.SphereGeometry(696340*km2unitBase*sizeScale, 64, 64),
+      new THREE.MeshBasicMaterial({color:0xffcc55})
+    );
+    sun.name='Sole'; scene.add(sun); nodeByName.set('Sole', sun); sunLight.position.copy(sun.position);
+
+    // ---- Loader texture ----
+    const loader = new THREE.TextureLoader();
+    function sphereMatForBody(b){
+      const mat = (b.spec)
+        ? new THREE.MeshStandardMaterial({map:loader.load(b.tex), metalness:0, roughness:1, emissive:0x000000,
+                                          specularMap:loader.load(b.spec)})
+        : new THREE.MeshStandardMaterial({map:loader.load(b.tex||''), color: b.tex?0xffffff:(b.color||0x888888), metalness:0, roughness:1});
+      return mat;
+    }
+
+    // ---- Helpers ----
+    function makeOrbitRing(radius, color=0x335577){
+      const g = new THREE.RingGeometry(radius*0.999, radius*1.001, 256);
+      const m = new THREE.MeshBasicMaterial({color, side:THREE.DoubleSide, transparent:true, opacity:0.35});
+      const ring = new THREE.Mesh(g,m); ring.rotation.x = Math.PI/2;
+      return ring;
+    }
+    function makePlanetNode(b){
+      const seg = Math.max(16, Math.min(64, Math.round(b.radiusKm/400)));
+      const geo = new THREE.SphereGeometry(Math.max(0.002, b.radiusKm*km2unitBase*sizeScale), seg, seg);
+      const mat = sphereMatForBody(b);
+      const mesh = new THREE.Mesh(geo, mat); mesh.name = b.name+':sphere';
+
+      const tilt = new THREE.Group(); tilt.name = b.name; tilt.rotation.z = THREE.MathUtils.degToRad(b.tilt||0);
+      tilt.add(mesh);
+      return tilt;
+    }
+
+    // ---- Crea pianeti + orbite ----
+    for(const b of bodies.filter(x=>x.name!=='Sole')){
+      const parentName = b.parent || 'Sole';
+      parentByName.set(b.name, parentName);
+
+      const tiltNode = makePlanetNode(b);
+      scene.add(tiltNode);
+      nodeByName.set(b.name, tiltNode);
+
+      // orbita attorno al Sole (o al parent)
+      const r = (b.a_AU||0.05) * distanceScale * 3.5; // AU -> unità scena
+      const ring = makeOrbitRing(r);
+      ring.rotation.z = THREE.MathUtils.degToRad(b.inc||0);
+      scene.add(ring);
+      orbitByName.set(b.name, {radius:r, ringMesh:ring});
+
+      // anelli di Saturno
+      if(b.name==='Saturno'){
+        const ringsGeo = new THREE.RingGeometry(1.25, 2.1, 256);
+        const ringsMat = new THREE.MeshBasicMaterial({
+          map: loader.load(b.ringTex),
+          alphaMap: loader.load(b.ringAlpha),
+          transparent:true, side:THREE.DoubleSide
+        });
+        const rings = new THREE.Mesh(ringsGeo, ringsMat);
+        rings.rotation.x = Math.PI/2;
+        tiltNode.add(rings);
+        // scala rispetto al raggio del pianeta
+        const planetR = b.radiusKm*km2unitBase*sizeScale;
+        rings.scale.set(planetR, planetR, 1);
+      }
+    }
+
+    // ---- Posizionamento iniziale ----
+    function setOrbitPosition(name, t){
+      const b = bodies.find(x=>x.name===name);
+      if(!b) return;
+      const node = nodeByName.get(name);
+      const parentNode = nodeByName.get(parentByName.get(name));
+      const a = (b.a_AU||0.05) * distanceScale * 3.5;      // raggio orbita visuale
+      const P = (b.P_orbit||1) * DAY;                       // periodo in secondi
+      const theta = (t % P)/P * TAU;
+      const pos = new THREE.Vector3(Math.cos(theta)*a, 0, Math.sin(theta)*a);
+      // inclinazione piano orbitale
+      const inc = b.inc||0;
+      pos.applyAxisAngle(new THREE.Vector3(0,0,1), THREE.MathUtils.degToRad(inc));
+      const base = new THREE.Vector3();
+      if(parentNode) parentNode.getWorldPosition(base);
+      node.position.copy(base.add(pos));
+    }
+
+    function spin(name, dt){
+      const b = bodies.find(x=>x.name===name);
+      if(!b) return;
+      const node = nodeByName.get(name);
+      const sphere = node.children.find(c=>c.isMesh);
+      const P = (b.P_rot||24);
+      const dir = P<0 ? -1 : 1;
+      const period = Math.abs(P)*3600;
+      sphere.rotation.y += (dt/period)*TAU*dir;
+    }
+
+    // ---- Scale update ----
+    function updateScales(){
+      sizeScale = parseFloat(ui.sizeScale.value);
+      distanceScale = parseFloat(ui.distanceScale.value);
+
+      // Sole
+      sun.geometry.dispose();
+      sun.geometry = new THREE.SphereGeometry(696340*km2unitBase*sizeScale, 64, 64);
+
+      // Pianeti
+      for(const b of bodies.filter(x=>x.name!=='Sole')){
+        const node = nodeByName.get(b.name);
+        const sphere = node.children.find(c=>c.isMesh);
+        sphere.geometry.dispose();
+        sphere.geometry = new THREE.SphereGeometry(Math.max(0.002, b.radiusKm*km2unitBase*sizeScale), 48, 48);
+
+        // orbite
+        const ob = orbitByName.get(b.name);
+        const newR = (b.a_AU||0.05) * distanceScale * 3.5;
+        ob.radius = newR;
+        ob.ringMesh.geometry.dispose();
+        ob.ringMesh.geometry = new THREE.RingGeometry(newR*0.999, newR*1.001, 256);
+
+        // anelli di Saturno (riscalati al raggio del pianeta)
+        if(b.name==='Saturno'){
+          const rings = node.children.find(c=>c.isMesh && c.geometry.isRingGeometry);
+          if(rings){
+            const planetR = b.radiusKm*km2unitBase*sizeScale;
+            rings.scale.set(planetR, planetR, 1);
+          }
+        }
+      }
+    }
+    ui.sizeScale.oninput = updateScales;
+    ui.distanceScale.oninput = updateScales;
+    updateScales();
+
+    // ---- Resize ----
+    addEventListener('resize', ()=>{
+      renderer.setSize(innerWidth, innerHeight);
+      camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+    });
+
+    // ---- UI Play/Pausa/Speed ----
+    ui.play.onclick = ()=>{ playing = true; };
+    ui.pause.onclick = ()=>{ playing = false; };
+
+    // ---- Loop ----
+    let frames=0, fps=0, fpsLast=performance.now();
+    (function animate(){
+      requestAnimationFrame(animate);
+      const now = performance.now();
+      const dt = (now-last)/1000; last=now;
+
+      // FPS
+      frames++; if(now-fpsLast>1000){ fps=frames; frames=0; fpsLast=now; ui.fps.textContent = 'FPS: '+fps; }
+
+      // tempo simulato
+      const speed = parseFloat(ui.speed.value);
+      if(playing) simTime += dt*speed;
+
+      // posizioni + spin
+      for(const b of bodies.filter(x=>x.name!=='Sole')) setOrbitPosition(b.name, simTime);
+      for(const b of bodies) if(b.name!=='Sole') spin(b.name, dt*speed);
+
+      controls.update();
+      renderer.render(scene, camera);
+    })();
+
+    // Inquadra Terra all'avvio
+    (function centerOnTerra(){
+      const node = nodeByName.get('Terra');
+      const pos = new THREE.Vector3(); node.getWorldPosition(pos);
+      controls.target.copy(pos);
+      camera.position.set(pos.x+6, pos.y+3, pos.z+6);
+      controls.update();
+    })();
   </script>
 </body>
 </html>
